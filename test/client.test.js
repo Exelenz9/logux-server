@@ -320,3 +320,44 @@ it('checks action meta', () => {
     expect(test.reports[3][3].id).toEqual([2, '10:uuid', 0])
   })
 })
+
+it('checks actions order', () => {
+  const test = createReporter()
+  test.app.log.on('preadd', (action, meta) => {
+    meta.reasons.push('test')
+  })
+
+  const client = createClient(test.app)
+  const client2 = createClient(test.app)
+  const client2Actions = []
+  client2.sync.log.on('add', action => {
+    client2Actions.push(action)
+  })
+  return client.connection.connect().then(() => {
+    const protocol = client.sync.localProtocol
+    client.connection.other().send(['connect', protocol, '10:uuid', 0])
+    return client.connection.pair.wait('right')
+  }).then(() => {
+    client.connection.other().send(
+      ['sync', 1, { type: 'a' }, { id: [1, '10:uuid', 0] }]
+    )
+    client.connection.other().send(
+      ['sync', 2, { type: 'b' }, { id: [2, '10:uuid', 0] }]
+    )
+    client.connection.other().send(
+      ['sync', 3, { type: 'c' }, { id: [3, '10:uuid', 0] }]
+    )
+    return client.connection.pair.wait('right')
+  }).then(() => {
+    client.connection.disconnect()
+    return client2.connection.connect()
+  }).then(() => {
+    const protocol = client2.sync.localProtocol
+    client2.connection.other().send(['connect', protocol, '11:uuid', 0])
+    return client2.connection.pair.wait('right')
+  }).then(() => {
+    expect(client2Actions[0].type).toEqual('a')
+    expect(client2Actions[1].type).toEqual('b')
+    expect(client2Actions[2].type).toEqual('c')
+  })
+})
